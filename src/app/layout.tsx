@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "The Pook Advisor - Inner Game, Dating & Manhood",
+  title: "The Pook Advisor",
   description: "Strategic counsel grounded in Inner Game, Masculinity, and The Book of Pook.",
 };
 
