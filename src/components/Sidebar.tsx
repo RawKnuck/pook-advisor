@@ -1,9 +1,8 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { signOut, useSession } from 'next-auth/react';
 
 interface Chat {
   id: string;
@@ -17,120 +16,147 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ activeChatId }: SidebarProps) {
-  const [chats, setChats] = useState<Chat[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editTitle, setEditTitle] = useState('');
-  const [collapsed, setCollapsed] = useState(false);
+  const [chats, setChats] = useState<Chat[]>(() => {
+    if (typeof window !== "undefined") {
+      const cached = sessionStorage.getItem("pook_chats_cache");
+      if (cached) {
+        try {
+          return JSON.parse(cached);
+        } catch {
+          return [];
+        }
+      }
+    }
+    return [];
+  });
+  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [editingChatId, setEditingChatId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState("");
   const router = useRouter();
-  const sessionData = useSession();
-  const session = sessionData?.data;
 
-  const CACHE_KEY = "pook_sessions_cache";
+  const fetchChats = async () => {
+    try {
+      const res = await fetch("/api/chats");
+      if (res.ok) {
+        const data = await res.json();
+        const list = data.chats || [];
+        setChats(list);
+        if (typeof window !== "undefined") {
+          sessionStorage.setItem("pook_chats_cache", JSON.stringify(list));
+        }
+      }
+    } catch (err) {
+      console.error("Error fetching Pook chats:", err);
+    }
+  };
 
   useEffect(() => {
-    // Populate immediately from sessionStorage to eliminate visual flashes
-    try {
-      const cached = sessionStorage.getItem(CACHE_KEY);
-      if (cached) {
-        setChats(JSON.parse(cached));
-        setLoading(false);
-      }
-    } catch (e) {
-      console.warn("Failed to read Pook sessions cache:", e);
-    }
-
-    async function fetchChats() {
-      try {
-        const res = await fetch('/api/chats');
-        if (res.ok) {
-          const data = await res.json();
-          const fetchedChats = data.chats || [];
-          setChats(fetchedChats);
-          try {
-            sessionStorage.setItem(CACHE_KEY, JSON.stringify(fetchedChats));
-          } catch (e) {
-            console.warn("Failed to update Pook sessions cache:", e);
-          }
-        }
-      } catch (err) {
-        console.error('Failed to fetch Pook chats:', err);
-      } finally {
-        setLoading(false);
-      }
-    }
     fetchChats();
   }, []);
 
-  const handleStartEdit = (chat: Chat, e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setEditingId(chat.id);
-    setEditTitle(chat.title);
+  const handleNewChat = async () => {
+    if (loading) return;
+    setLoading(true);
+    try {
+      const res = await fetch("/api/chats", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "New Pook Consultation" }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const updatedList = [data.chat, ...chats];
+        setChats(updatedList);
+        if (typeof window !== "undefined") {
+          sessionStorage.setItem("pook_chats_cache", JSON.stringify(updatedList));
+        }
+        router.push(`/chat/${data.chat.id}`);
+      }
+    } catch (err) {
+      console.error("Error creating Pook chat:", err);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleSaveRename = async (chatId: string) => {
+  const handleDeleteChat = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm("Are you sure you want to delete this consultation log?")) return;
+    try {
+      const res = await fetch(`/api/chats/${id}`, { method: "DELETE" });
+      if (res.ok) {
+        const updatedList = chats.filter((c) => c.id !== id);
+        setChats(updatedList);
+        if (typeof window !== "undefined") {
+          sessionStorage.setItem("pook_chats_cache", JSON.stringify(updatedList));
+        }
+        if (activeChatId === id) {
+          router.push("/");
+        }
+      }
+    } catch (err) {
+      console.error("Error deleting Pook chat:", err);
+    }
+  };
+
+  const startRename = (id: string, title: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingChatId(id);
+    setEditTitle(title);
+  };
+
+  const handleRename = async (id: string) => {
     if (!editTitle.trim()) {
-      setEditingId(null);
+      setEditingChatId(null);
       return;
     }
     try {
-      const res = await fetch(`/api/chats/${chatId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await fetch(`/api/chats/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title: editTitle.trim() }),
       });
       if (res.ok) {
-        const updated = chats.map((c) =>
-          c.id === chatId ? { ...c, title: editTitle.trim() } : c
+        const updatedList = chats.map((c) =>
+          c.id === id ? { ...c, title: editTitle.trim() } : c
         );
-        setChats(updated);
-        try {
-          sessionStorage.setItem(CACHE_KEY, JSON.stringify(updated));
-        } catch (e) {
-          console.warn("Failed to update Pook sessions cache:", e);
+        setChats(updatedList);
+        if (typeof window !== "undefined") {
+          sessionStorage.setItem("pook_chats_cache", JSON.stringify(updatedList));
         }
       }
     } catch (err) {
-      console.error('Failed to rename Pook chat:', err);
+      console.error("Error renaming Pook chat:", err);
     } finally {
-      setEditingId(null);
+      setEditingChatId(null);
     }
   };
 
-  const handleDelete = async (chatId: string, e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!confirm('Are you sure you want to delete this consultation log?')) return;
-
-    try {
-      const res = await fetch(`/api/chats/${chatId}`, { method: 'DELETE' });
-      if (res.ok) {
-        const updated = chats.filter((c) => c.id !== chatId);
-        setChats(updated);
-        try {
-          sessionStorage.setItem(CACHE_KEY, JSON.stringify(updated));
-        } catch (e) {
-          console.warn("Failed to update Pook sessions cache:", e);
-        }
-        if (activeChatId === chatId) {
-          router.push('/');
-        }
-      }
-    } catch (err) {
-      console.error('Failed to delete Pook chat:', err);
+  const handleSignOut = async () => {
+    const { signOut } = await import("next-auth/react");
+    if (typeof window !== "undefined") {
+      sessionStorage.removeItem("pook_chats_cache");
     }
+    await signOut({ callbackUrl: "/login" });
   };
 
-  if (collapsed) {
+  if (isCollapsed) {
     return (
       <aside className="sidebar-collapsed">
         <button
-          onClick={() => setCollapsed(false)}
-          className="sidebar-toggle-btn"
-          title="Expand Log Index"
+          onClick={() => setIsCollapsed(false)}
+          title="Expand Index"
+          className="sidebar-icon-btn"
         >
           ►
+        </button>
+        <button
+          onClick={handleNewChat}
+          title="New Consultation"
+          className="sidebar-icon-btn"
+        >
+          ＋
         </button>
       </aside>
     );
@@ -139,76 +165,75 @@ export default function Sidebar({ activeChatId }: SidebarProps) {
   return (
     <aside className="sidebar">
       <div className="sidebar-header">
-        <div className="sidebar-title-row">
-          <Link href="/" className="sidebar-brand">
-            The Pook Advisor
-          </Link>
-          <button
-            onClick={() => setCollapsed(true)}
-            className="sidebar-collapse-btn"
-            title="Collapse Index"
-          >
-            ◄
-          </button>
-        </div>
-        <Link href="/" className="sidebar-new-btn">
-          + New Consultation
+        <Link href="/" className="sidebar-brand">
+          The Pook Advisor
         </Link>
+        <button
+          onClick={() => setIsCollapsed(true)}
+          title="Collapse Index"
+          className="sidebar-collapse-btn"
+        >
+          ◄
+        </button>
       </div>
 
-      <div className="sidebar-section-label">Consultation History</div>
+      <button
+        onClick={handleNewChat}
+        disabled={loading}
+        className="sidebar-new-btn"
+      >
+        {loading ? "Creating..." : "＋ New Consultation"}
+      </button>
 
       <div className="sidebar-chat-list">
-        {loading && chats.length === 0 ? (
-          <div className="sidebar-loading">Loading logs...</div>
-        ) : chats.length === 0 ? (
-          <div className="sidebar-empty">No prior consultations.</div>
+        {chats.length === 0 ? (
+          <div className="sidebar-empty">No past consultations.</div>
         ) : (
           chats.map((chat) => {
             const isActive = chat.id === activeChatId;
-            const isEditing = editingId === chat.id;
-
+            const isEditing = chat.id === editingChatId;
             return (
               <div
                 key={chat.id}
-                className={`sidebar-chat-item ${isActive ? 'active' : ''}`}
+                onClick={() => !isEditing && router.push(`/chat/${chat.id}`)}
+                className={`sidebar-chat-item${isActive ? " active" : ""}`}
+                style={{ cursor: isEditing ? "default" : "pointer" }}
               >
                 {isEditing ? (
                   <input
                     type="text"
-                    className="sidebar-rename-input"
                     value={editTitle}
                     onChange={(e) => setEditTitle(e.target.value)}
-                    onBlur={() => handleSaveRename(chat.id)}
+                    onBlur={() => handleRename(chat.id)}
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter') handleSaveRename(chat.id);
-                      if (e.key === 'Escape') setEditingId(null);
+                      if (e.key === "Enter") handleRename(chat.id);
+                      if (e.key === "Escape") setEditingChatId(null);
                     }}
                     autoFocus
+                    className="sidebar-edit-input"
                   />
                 ) : (
-                  <Link href={`/chat/${chat.id}`} className="sidebar-chat-link">
-                    <span className="sidebar-chat-title">{chat.title}</span>
-                  </Link>
-                )}
-
-                {!isEditing && (
-                  <div className="sidebar-item-actions">
-                    <button
-                      onClick={(e) => handleStartEdit(chat, e)}
-                      className="sidebar-action-btn"
-                      title="Rename"
-                    >
-                      ✎
-                    </button>
-                    <button
-                      onClick={(e) => handleDelete(chat.id, e)}
-                      className="sidebar-action-btn delete"
-                      title="Delete"
-                    >
-                      ×
-                    </button>
-                  </div>
+                  <>
+                    <span className={`sidebar-chat-title${isActive ? " active" : ""}`}>
+                      {chat.title}
+                    </span>
+                    <div className="sidebar-chat-actions">
+                      <button
+                        onClick={(e) => startRename(chat.id, chat.title, e)}
+                        title="Rename Consultation"
+                        className="sidebar-action-btn"
+                      >
+                        ✎
+                      </button>
+                      <button
+                        onClick={(e) => handleDeleteChat(chat.id, e)}
+                        title="Delete Consultation"
+                        className="sidebar-delete-btn"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </>
                 )}
               </div>
             );
@@ -216,19 +241,11 @@ export default function Sidebar({ activeChatId }: SidebarProps) {
         )}
       </div>
 
-      {session?.user && (
-        <div className="sidebar-footer">
-          <div className="sidebar-user-info">
-            <span className="sidebar-user-email">{session.user.email}</span>
-          </div>
-          <button
-            onClick={() => signOut({ callbackUrl: '/login' })}
-            className="sidebar-signout-btn"
-          >
-            Sign Out
-          </button>
-        </div>
-      )}
+      <div className="sidebar-footer">
+        <button onClick={handleSignOut} className="sidebar-signout-btn">
+          Sign Out
+        </button>
+      </div>
     </aside>
   );
 }
