@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from 'next/link';
 
 interface Chat {
   id: string;
@@ -165,15 +164,13 @@ export default function Sidebar({ activeChatId }: SidebarProps) {
   return (
     <aside className="sidebar">
       <div className="sidebar-header">
-        <Link href="/" className="sidebar-brand">
-          The Pook Advisor
-        </Link>
+        <span className="sidebar-label">Sessions</span>
         <button
           onClick={() => setIsCollapsed(true)}
-          title="Collapse Index"
+          title="Collapse Sidebar"
           className="sidebar-collapse-btn"
         >
-          ◄
+          ←
         </button>
       </div>
 
