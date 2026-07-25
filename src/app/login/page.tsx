@@ -28,7 +28,7 @@ function LoginContent() {
       <div className="latex-divider" />
 
       <p className="login-description">
-        Access to The Sovereign Advisor is restricted to authorized consultants.
+        Access to The Pook Advisor is reserved for those seeking true inner game, attraction, and manhood.
         Please authenticate via Google to initiate session.
       </p>
 
