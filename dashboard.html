@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CorpM — Live Analytics</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #080a10;
+      --surface:  #0f1117;
+      --surface2: #141720;
+      --border:   #1c2030;
+      --text:     #e2e4ec;
+      --muted:    #5a6378;
+      --accent:   #7c6af7;
+      --green:    #22d3a5;
+      --orange:   #f97316;
+      --pink:     #e879f9;
+      --red:      #f43f5e;
+      --yellow:   #fbbf24;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* ── HEADER ─────────────────────────────── */
+    .header {
+      padding: 0 40px;
+      height: 64px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border);
+      background: linear-gradient(180deg, #0c0e18 0%, var(--bg) 100%);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      backdrop-filter: blur(10px);
+    }
+    .logo {
+      font-size: 16px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      background: linear-gradient(90deg, #a78bfa 0%, #22d3a5 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .header-right { display: flex; align-items: center; gap: 16px; }
+
+    .status-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 8px var(--green);
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%,100% { opacity: 1; }
+      50%      { opacity: .4; }
+    }
+    .status-text { font-size: 12px; color: var(--muted); }
+    #last-updated { font-size: 11px; color: var(--muted); }
+
+    .refresh-btn {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-family: 'Inter', sans-serif;
+      font-size: 12px;
+      font-weight: 500;
+      padding: 6px 14px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: border-color .2s, background .2s;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .refresh-btn:hover { border-color: var(--accent); background: rgba(124,106,247,.08); }
+    .refresh-btn.spinning svg { animation: spin .7s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── CONTAINER ───────────────────────────── */
+    .container { max-width: 1320px; margin: 0 auto; padding: 32px 40px 60px; }
+
+    /* ── KPI STRIP ───────────────────────────── */
+    .kpi-row {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 14px;
+      margin-bottom: 28px;
+    }
+    .kpi {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 18px 20px 16px;
+      position: relative;
+      overflow: hidden;
+      transition: border-color .25s, transform .15s;
+    }
+    .kpi:hover { border-color: rgba(124,106,247,.4); transform: translateY(-1px); }
+    .kpi::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, rgba(124,106,247,.04) 0%, transparent 60%);
+      pointer-events: none;
+    }
+    .kpi-accent {
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 2px;
+      background: var(--kpi-c, var(--accent));
+      border-radius: 2px 2px 0 0;
+    }
+    .kpi-label {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .8px;
+      color: var(--muted);
+    }
+    .kpi-value {
+      font-size: 34px;
+      font-weight: 800;
+      line-height: 1.1;
+      margin: 8px 0 6px;
+      letter-spacing: -1px;
+      color: var(--text);
+      transition: color .3s;
+    }
+    .kpi-value.updated { color: var(--green); }
+    .kpi-sub { font-size: 11px; color: var(--muted); }
+
+    /* ── SECTION HEADER ──────────────────────── */
+    .section-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .section-title {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--muted);
+    }
+    .section-line {
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    /* ── CHART GRIDS ─────────────────────────── */
+    .grid-2 { display: grid; grid-template-columns: 1.6fr 1fr; gap: 16px; margin-bottom: 16px; }
+    .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+    .grid-1 { margin-bottom: 16px; }
+
+    /* ── CARD ────────────────────────────────── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 22px 24px;
+      transition: border-color .25s;
+    }
+    .card:hover { border-color: rgba(124,106,247,.25); }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 20px;
+    }
+    .card-title { font-size: 13px; font-weight: 600; }
+    .card-sub   { font-size: 11px; color: var(--muted); margin-top: 3px; }
+    .badge {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 3px 10px;
+      border-radius: 20px;
+      letter-spacing: .2px;
+      white-space: nowrap;
+    }
+    .badge-live   { background:rgba(34,211,165,.1);color:var(--green);border:1px solid rgba(34,211,165,.2); }
+    .badge-sql    { background:rgba(124,106,247,.1);color:#a78bfa;border:1px solid rgba(124,106,247,.2); }
+    .badge-funnel { background:rgba(249,115,22,.1);color:var(--orange);border:1px solid rgba(249,115,22,.2); }
+
+    /* ── CANVAS ──────────────────────────────── */
+    .chart-wrap { position: relative; }
+
+    /* ── FUNNEL ──────────────────────────────── */
+    .funnel-step { display:flex; align-items:center; gap:12px; margin-bottom:14px; }
+    .funnel-meta { min-width: 130px; }
+    .funnel-name { font-size:12px; color:var(--muted); }
+    .funnel-val  { font-size:16px; font-weight:700; }
+    .funnel-track {
+      flex: 1;
+      height: 24px;
+      background: rgba(255,255,255,.03);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .funnel-fill {
+      height: 100%;
+      border-radius: 6px;
+      transition: width .8s cubic-bezier(.4,0,.2,1);
+      display: flex; align-items: center;
+      padding-left: 10px;
+      font-size: 11px; font-weight: 600; color: rgba(255,255,255,.8);
+    }
+    .funnel-pct { min-width:40px; text-align:right; font-size:13px; font-weight:700; }
+
+    /* ── TABLE ───────────────────────────────── */
+    table { width:100%; border-collapse:collapse; }
+    th {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .6px;
+      color: var(--muted);
+      padding: 0 12px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    td { padding: 11px 12px; font-size:13px; border-bottom:1px solid rgba(255,255,255,.03); }
+    tr:last-child td { border-bottom:none; }
+
+    .avatar {
+      display:inline-flex; align-items:center; justify-content:center;
+      width:26px; height:26px; border-radius:50%;
+      font-size:11px; font-weight:700; margin-right:8px; vertical-align:middle;
+    }
+    .bar-mini {
+      display:inline-block; height:5px; border-radius:3px;
+      margin-left:8px; vertical-align:middle; opacity:.7;
+      transition: width .6s ease;
+    }
+
+    /* ── LIVE TICKER ─────────────────────────── */
+    .ticker {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 18px;
+      font-size: 11px;
+      color: var(--muted);
+      margin-bottom: 28px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .ticker strong { color: var(--text); font-weight: 600; }
+
+    /* ── LOADING OVERLAY ─────────────────────── */
+    .loading-overlay {
+      position: fixed; inset: 0;
+      background: var(--bg);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 16px;
+      z-index: 999;
+      transition: opacity .4s;
+    }
+    .loading-overlay.hidden { opacity:0; pointer-events:none; }
+    .spinner {
+      width: 36px; height: 36px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+    }
+    .loading-text { font-size:13px; color:var(--muted); }
+
+    /* ── EMPTY STATE ─────────────────────────── */
+    .empty { text-align:center; padding:40px; color:var(--muted); font-size:13px; }
+
+    /* ── ERROR BANNER ────────────────────────── */
+    .error-banner {
+      background: rgba(244,63,94,.08);
+      border: 1px solid rgba(244,63,94,.2);
+      border-radius: 10px;
+      padding: 10px 16px;
+      font-size:12px;
+      color: var(--red);
+      margin-bottom:16px;
+      display:none;
+    }
+
+    @media (max-width: 960px) {
+      .kpi-row { grid-template-columns: repeat(2,1fr); }
+      .grid-2, .grid-3 { grid-template-columns: 1fr; }
+      .container { padding: 20px; }
+      .header { padding: 0 20px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Loading overlay -->
+<div class="loading-overlay" id="loading">
+  <div class="spinner"></div>
+  <div class="loading-text">Connecting to Supabase…</div>
+</div>
+
+<!-- Header -->
+<div class="header">
+  <div class="logo">CorpM Analytics</div>
+  <div class="header-right">
+    <div style="display:flex;align-items:center;gap:7px;">
+      <div class="status-dot" id="statusDot"></div>
+      <span class="status-text" id="statusText">Connecting…</span>
+    </div>
+    <span id="last-updated">—</span>
+    <button class="refresh-btn" id="refreshBtn" onclick="refresh()">
+      <svg id="refreshIcon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/>
+      </svg>
+      Refresh
+    </button>
+  </div>
+</div>
+
+<div class="container">
+  <div class="error-banner" id="errorBanner"></div>
+
+  <!-- Ticker -->
+  <div class="ticker">
+    <div class="status-dot" style="width:6px;height:6px;flex-shrink:0;"></div>
+    Live data from <strong>Supabase PostgreSQL</strong> via RPC · Auto-refreshes every
+    <strong>30 seconds</strong> · All times in <strong>IST (UTC+5:30)</strong>
+  </div>
+
+  <!-- KPI Strip -->
+  <div class="kpi-row" id="kpiRow">
+    <div class="kpi"><div class="kpi-accent" style="--kpi-c:#7c6af7"></div><div class="kpi-label">Total Users</div><div class="kpi-value" id="k-users">—</div><div class="kpi-sub" id="k-users-sub">loading…</div></div>
+    <div class="kpi"><div class="kpi-accent" style="--kpi-c:#22d3a5"></div><div class="kpi-label">Activation Rate</div><div class="kpi-value" id="k-activation">—</div><div class="kpi-sub">signed up &amp; messaged</div></div>
+    <div class="kpi"><div class="kpi-accent" style="--kpi-c:#f97316"></div><div class="kpi-label">Total Messages</div><div class="kpi-value" id="k-msgs">—</div><div class="kpi-sub" id="k-msgs-sub">loading…</div></div>
+    <div class="kpi"><div class="kpi-accent" style="--kpi-c:#e879f9"></div><div class="kpi-label">Avg Turns / Chat</div><div class="kpi-value" id="k-turns">—</div><div class="kpi-sub">median engagement depth</div></div>
+    <div class="kpi"><div class="kpi-accent" style="--kpi-c:#fbbf24"></div><div class="kpi-label">RAG Cache</div><div class="kpi-value" id="k-cache">—</div><div class="kpi-sub" id="k-cache-sub">chats with warm cache</div></div>
+  </div>
+
+  <!-- Row 1: Daily + Tiers -->
+  <div class="section-header"><span class="section-title">Engagement Over Time</span><div class="section-line"></div></div>
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-header">
+        <div><div class="card-title">Daily Messages</div><div class="card-sub">User messages per day (IST) — updates as new chats happen</div></div>
+        <span class="badge badge-live">● LIVE</span>
+      </div>
+      <div class="chart-wrap" style="height:230px;"><canvas id="dailyChart"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <div><div class="card-title">Engagement Tiers</div><div class="card-sub">Distribution of chat depth</div></div>
+        <span class="badge badge-sql">CASE WHEN</span>
+      </div>
+      <div class="chart-wrap" style="height:190px;"><canvas id="tierChart"></canvas></div>
+      <div id="tierLegend" style="margin-top:14px;display:flex;flex-direction:column;gap:7px;"></div>
+    </div>
+  </div>
+
+  <!-- Row 2: Hourly + Funnel + Leaderboard -->
+  <div class="section-header"><span class="section-title">Users &amp; Patterns</span><div class="section-line"></div></div>
+  <div class="grid-3">
+
+    <!-- Hourly -->
+    <div class="card">
+      <div class="card-header">
+        <div><div class="card-title">Activity by Hour (IST)</div><div class="card-sub">Peak usage windows</div></div>
+        <span class="badge badge-sql">EXTRACT</span>
+      </div>
+      <div class="chart-wrap" style="height:190px;"><canvas id="hourlyChart"></canvas></div>
+    </div>
+
+    <!-- Funnel -->
+    <div class="card">
+      <div class="card-header">
+        <div><div class="card-title">Activation Funnel</div><div class="card-sub">Signup → Power User</div></div>
+        <span class="badge badge-funnel">FUNNEL</span>
+      </div>
+      <div id="funnelWrap" style="padding-top:6px;"></div>
+    </div>
+
+    <!-- Leaderboard -->
+    <div class="card">
+      <div class="card-header">
+        <div><div class="card-title">User Leaderboard</div><div class="card-sub">Turns sent per user</div></div>
+        <span class="badge badge-live">● LIVE</span>
+      </div>
+      <table>
+        <thead><tr><th>User</th><th>Chats</th><th>Turns</th></tr></thead>
+        <tbody id="leaderboardBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── CONFIG ────────────────────────────────────────────────────────────────────
+const SUPABASE_URL  = 'https://xzntjcttcijvpdytoopk.supabase.co';
+const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh6bnRqY3R0Y2lqdnBkeXRvb3BrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMzMTE3OTAsImV4cCI6MjA5ODg4Nzc5MH0.7yRDsTdlVQ045GRe7XBRW9Rc79le9Ylzv5LpNQMG5U0';
+const REFRESH_MS    = 30_000; // 30 seconds
+
+// ── RPC HELPER ────────────────────────────────────────────────────────────────
+async function rpc(fn) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
+    method: 'POST',
+    headers: {
+      'apikey': SUPABASE_ANON,
+      'Authorization': `Bearer ${SUPABASE_ANON}`,
+      'Content-Type': 'application/json'
+    },
+    body: '{}'
+  });
+  if (!res.ok) throw new Error(`${fn} failed: ${res.status} ${await res.text()}`);
+  return res.json();
+}
+
+// ── CHART DEFAULTS ────────────────────────────────────────────────────────────
+Chart.defaults.color          = '#5a6378';
+Chart.defaults.font.family    = 'Inter, sans-serif';
+Chart.defaults.font.size      = 11;
+
+const gridColor = 'rgba(255,255,255,0.04)';
+const tooltip   = {
+  backgroundColor: '#141720',
+  borderColor: '#1c2030',
+  borderWidth: 1,
+  titleColor: '#e2e4ec',
+  bodyColor: '#9ca3af',
+  padding: 10,
+  cornerRadius: 8
+};
+
+// ── CHART INSTANCES ───────────────────────────────────────────────────────────
+let dailyChart, tierChart, hourlyChart;
+
+function initCharts() {
+  dailyChart = new Chart(document.getElementById('dailyChart'), {
+    type: 'bar',
+    data: { labels: [], datasets: [
+      { label: 'User messages', data: [], backgroundColor: 'rgba(124,106,247,0.75)', borderColor: '#7c6af7', borderWidth: 1, borderRadius: 6, borderSkipped: false },
+      { label: 'AI responses',  data: [], backgroundColor: 'rgba(34,211,165,0.35)',  borderColor: 'rgba(34,211,165,0.6)', borderWidth: 1, borderRadius: 6, borderSkipped: false }
+    ]},
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      animation: { duration: 600 },
+      plugins: { legend: { position: 'top', labels: { boxWidth: 10, padding: 14, color: '#5a6378' } }, tooltip },
+      scales: {
+        x: { stacked: false, grid: { color: gridColor }, ticks: { color: '#5a6378' } },
+        y: { stacked: false, grid: { color: gridColor }, ticks: { color: '#5a6378', stepSize: 4 }, beginAtZero: true }
+      }
+    }
+  });
+
+  tierChart = new Chart(document.getElementById('tierChart'), {
+    type: 'doughnut',
+    data: { labels: [], datasets: [{ data: [], backgroundColor: [], borderColor: [], borderWidth: 2, hoverOffset: 8 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      cutout: '70%',
+      animation: { duration: 600 },
+      plugins: { legend: { display: false }, tooltip }
+    }
+  });
+
+  hourlyChart = new Chart(document.getElementById('hourlyChart'), {
+    type: 'bar',
+    data: { labels: [], datasets: [{
+      label: 'Messages',
+      data: [],
+      backgroundColor: [],
+      borderColor: [],
+      borderWidth: 1,
+      borderRadius: 4
+    }]},
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      animation: { duration: 600 },
+      plugins: { legend: { display: false }, tooltip },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: '#5a6378', maxRotation: 0, callback: (_, i, arr) => i % 4 === 0 ? arr[i].label : '' } },
+        y: { grid: { color: gridColor }, ticks: { color: '#5a6378', stepSize: 2 }, beginAtZero: true }
+      }
+    }
+  });
+}
+
+// ── UPDATE FUNCTIONS ──────────────────────────────────────────────────────────
+const tierColors = {
+  'Bounced':    { bg: 'rgba(244,63,94,0.8)',   border: '#f43f5e' },
+  'Casual':     { bg: 'rgba(251,191,36,0.8)',  border: '#fbbf24' },
+  'Engaged':    { bg: 'rgba(124,106,247,0.8)', border: '#7c6af7' },
+  'Power User': { bg: 'rgba(34,211,165,0.8)',  border: '#22d3a5' },
+};
+const tierTextColors = { 'Bounced': '#f43f5e', 'Casual': '#fbbf24', 'Engaged': '#a78bfa', 'Power User': '#22d3a5' };
+const avatarColors = ['linear-gradient(135deg,#7c6af7,#a78bfa)', 'linear-gradient(135deg,#1e3a5f,#2563eb)',
+                      'linear-gradient(135deg,#374151,#4b5563)', 'linear-gradient(135deg,#4a1942,#d946ef)'];
+
+function flash(el) {
+  el.classList.add('updated');
+  setTimeout(() => el.classList.remove('updated'), 800);
+}
+
+function setKpi(id, val) {
+  const el = document.getElementById(id);
+  if (el && el.textContent !== String(val)) { el.textContent = val; flash(el); }
+  else if (el) el.textContent = val;
+}
+
+function updateKPIs(data) {
+  setKpi('k-users',      data.total_users);
+  setKpi('k-activation', data.activation_rate + '%');
+  setKpi('k-msgs',       data.total_messages);
+  setKpi('k-turns',      data.avg_turns_per_chat);
+  setKpi('k-cache',      data.chats_with_cache + '/' + data.total_chats);
+  document.getElementById('k-users-sub').textContent  = `${data.total_chats} chats total`;
+  document.getElementById('k-msgs-sub').textContent   = `${data.user_messages} user · ${data.total_messages - data.user_messages} AI`;
+  document.getElementById('k-cache-sub').textContent  = `chats with warm cache`;
+}
+
+function updateDailyChart(rows) {
+  if (!rows) return;
+  dailyChart.data.labels                  = rows.map(r => r.day);
+  dailyChart.data.datasets[0].data        = rows.map(r => r.user_msgs);
+  dailyChart.data.datasets[1].data        = rows.map(r => r.ai_msgs);
+  // Highlight the most recent day
+  const colors = rows.map((_, i) => i === rows.length - 1 ? 'rgba(34,211,165,0.85)' : 'rgba(124,106,247,0.7)');
+  dailyChart.data.datasets[0].backgroundColor = colors;
+  dailyChart.update();
+}
+
+function updateTierChart(rows) {
+  if (!rows) return;
+  const order = ['Bounced', 'Casual', 'Engaged', 'Power User'];
+  const sorted = order.map(t => rows.find(r => r.tier === t)).filter(Boolean);
+  const total  = sorted.reduce((s, r) => s + Number(r.chats), 0);
+
+  tierChart.data.labels                        = sorted.map(r => r.tier);
+  tierChart.data.datasets[0].data              = sorted.map(r => r.chats);
+  tierChart.data.datasets[0].backgroundColor   = sorted.map(r => tierColors[r.tier]?.bg   || '#555');
+  tierChart.data.datasets[0].borderColor       = sorted.map(r => tierColors[r.tier]?.border || '#555');
+  tierChart.update();
+
+  // Legend
+  const legend = document.getElementById('tierLegend');
+  legend.innerHTML = sorted.map(r => `
+    <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;">
+      <span style="display:flex;align-items:center;gap:8px;">
+        <span style="width:8px;height:8px;border-radius:50%;background:${tierColors[r.tier]?.border};display:inline-block;flex-shrink:0;"></span>
+        <span style="color:var(--muted);">${r.tier}</span>
+      </span>
+      <span style="font-weight:700;color:${tierTextColors[r.tier]};">${r.chats} chats · ${Math.round(r.chats/total*100)}%</span>
+    </div>`).join('');
+}
+
+function updateHourlyChart(rows) {
+  if (!rows) return;
+  const labels = Array.from({length: 24}, (_, i) => `${i}:00`);
+  const data   = Array.from({length: 24}, (_, i) => rows.find(r => r.hour_ist === i)?.msgs || 0);
+  const maxVal = Math.max(...data);
+
+  hourlyChart.data.labels                      = labels;
+  hourlyChart.data.datasets[0].data            = data;
+  hourlyChart.data.datasets[0].backgroundColor = data.map(v =>
+    v === maxVal           ? 'rgba(34,211,165,0.9)' :
+    v >= maxVal * 0.6      ? 'rgba(124,106,247,0.75)' :
+    v >= maxVal * 0.3      ? 'rgba(124,106,247,0.5)' :
+                             'rgba(124,106,247,0.2)'
+  );
+  hourlyChart.data.datasets[0].borderColor = data.map(v =>
+    v === maxVal ? '#22d3a5' : 'rgba(124,106,247,.5)'
+  );
+  hourlyChart.update();
+}
+
+function updateFunnel(kpi, leaderboard) {
+  if (!kpi || !leaderboard) return;
+  const total    = kpi.total_users;
+  const activated = leaderboard.filter(u => u.total_turns > 0).length;
+  const returned  = leaderboard.filter(u => u.total_turns >= 5).length;
+  const power     = leaderboard.filter(u => u.total_turns >= 10).length;
+
+  const steps = [
+    { label: 'Signed Up',        val: total,     pct: 100,                                color: '#a78bfa', fill: 'linear-gradient(90deg,#7c6af7,#a78bfa)' },
+    { label: 'Activated',        val: activated,  pct: Math.round(activated/total*100),   color: '#22d3a5', fill: 'linear-gradient(90deg,#22d3a5,#34d399)' },
+    { label: 'Engaged (5+ turns)',val: returned,  pct: Math.round(returned/total*100),    color: '#f97316', fill: 'linear-gradient(90deg,#f97316,#fb923c)' },
+    { label: 'Power User (10+)', val: power,      pct: Math.round(power/total*100),       color: '#e879f9', fill: 'linear-gradient(90deg,#e879f9,#d946ef)' },
+  ];
+
+  document.getElementById('funnelWrap').innerHTML = steps.map(s => `
+    <div class="funnel-step">
+      <div class="funnel-meta">
+        <div class="funnel-name">${s.label}</div>
+        <div class="funnel-val" style="color:${s.color};">${s.val}</div>
+      </div>
+      <div class="funnel-track">
+        <div class="funnel-fill" style="width:${Math.max(s.pct,2)}%;background:${s.fill};">${s.pct > 15 ? s.pct+'%' : ''}</div>
+      </div>
+      <div class="funnel-pct" style="color:${s.color};">${s.pct}%</div>
+    </div>`).join('');
+}
+
+function updateLeaderboard(rows) {
+  if (!rows) return;
+  const maxTurns = Math.max(...rows.map(r => r.total_turns), 1);
+  const statusMap = turns =>
+    turns >= 10 ? ['Power User', '#22d3a5', 'rgba(34,211,165,.08)', 'rgba(34,211,165,.2)'] :
+    turns >= 5  ? ['Engaged',    '#a78bfa', 'rgba(124,106,247,.08)','rgba(124,106,247,.2)']:
+    turns >= 1  ? ['Active',     '#fbbf24', 'rgba(251,191,36,.08)', 'rgba(251,191,36,.2)'] :
+                  ['Dormant',    '#f43f5e', 'rgba(244,63,94,.08)',  'rgba(244,63,94,.2)'];
+
+  document.getElementById('leaderboardBody').innerHTML = rows.map((r, i) => {
+    const initials = r.name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0,2);
+    const [label, col, bg, border] = statusMap(r.total_turns);
+    const barW = Math.round((r.total_turns / maxTurns) * 70);
+    return `<tr>
+      <td>
+        <span class="avatar" style="background:${avatarColors[i % avatarColors.length]};color:#fff;">${initials}</span>
+        ${r.name}
+      </td>
+      <td>${r.chats_created}</td>
+      <td>
+        <strong>${r.total_turns}</strong>
+        <span class="bar-mini" style="width:${barW}px;background:${col};"></span>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+// ── MAIN REFRESH ──────────────────────────────────────────────────────────────
+let isRefreshing = false;
+
+async function refresh() {
+  if (isRefreshing) return;
+  isRefreshing = true;
+  document.getElementById('refreshBtn').classList.add('spinning');
+  document.getElementById('errorBanner').style.display = 'none';
+
+  try {
+    const [kpi, daily, hourly, tiers, leaders] = await Promise.all([
+      rpc('get_kpi_stats'),
+      rpc('get_daily_messages'),
+      rpc('get_hourly_activity'),
+      rpc('get_engagement_tiers'),
+      rpc('get_user_leaderboard')
+    ]);
+
+    updateKPIs(kpi);
+    updateDailyChart(daily);
+    updateTierChart(tiers);
+    updateHourlyChart(hourly);
+    updateFunnel(kpi, leaders || []);
+    updateLeaderboard(leaders || []);
+
+    // Status
+    const now = new Date();
+    document.getElementById('last-updated').textContent =
+      'Updated ' + now.toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+    document.getElementById('statusDot').style.background  = 'var(--green)';
+    document.getElementById('statusDot').style.boxShadow   = '0 0 8px var(--green)';
+    document.getElementById('statusText').textContent       = 'Live';
+
+  } catch (err) {
+    const banner = document.getElementById('errorBanner');
+    banner.style.display = 'block';
+    banner.textContent   = '⚠ Could not reach Supabase: ' + err.message;
+    document.getElementById('statusDot').style.background = 'var(--red)';
+    document.getElementById('statusDot').style.boxShadow  = '0 0 8px var(--red)';
+    document.getElementById('statusText').textContent     = 'Error';
+    console.error(err);
+  } finally {
+    isRefreshing = false;
+    document.getElementById('refreshBtn').classList.remove('spinning');
+    document.getElementById('loading').classList.add('hidden');
+  }
+}
+
+// ── BOOT ──────────────────────────────────────────────────────────────────────
+initCharts();
+refresh();
+setInterval(refresh, REFRESH_MS);
+</script>
+</body>
+</html>
